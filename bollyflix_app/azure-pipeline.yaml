@@ -1,0 +1,69 @@
+trigger:
+  - master
+  - PRE-1883-EPIC-ado-yaml-Migrate
+
+pool:
+  vmImage: ubuntu-latest
+
+name: $(Build.DefinitionName)-$(Date:yyyyMMdd)$(Rev:.r)
+
+variables:
+  nodeVersion: "20.x"
+  reactAppName: "epic"
+  stagingAppName: "epic-staging-app"
+
+stages:
+  # -------------------------
+  # Stage 1: Build
+  # -------------------------
+  - stage: Build
+    displayName: "Build EPIC React App"
+    jobs:
+      - job: BuildReact
+        displayName: "Install & Build React"
+        steps:
+          - task: NodeTool@0
+            inputs:
+              versionSpec: "$(nodeVersion)"
+            displayName: "Install Node.js"
+
+          - script: |
+              npm install
+              npm run build
+            displayName: "Install dependencies & Build"
+
+          - script: |
+              npm run lint
+            displayName: "Run ESLint"
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: "build"
+              ArtifactName: "react-app"
+              publishLocation: "Container"
+            displayName: "Publish Build Artifacts"
+
+  # -------------------------
+  # Stage 2: Deploy to Staging
+  # -------------------------
+  - stage: DeployStaging
+    displayName: "Deploy epic to Staging"
+    dependsOn: Build
+    jobs:
+      - deployment: StagingDeployment
+        displayName: "Deploy to Staging App"
+        environment: "staging"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: react-app
+                  displayName: "Download Build Artifacts"
+
+                - task: AzureWebApp@1
+                  inputs:
+                    azureSubscription: "Your-Azure-Subscription-Service-Connection"
+                    appName: "$(stagingAppName)"
+                    package: "$(Pipeline.Workspace)/react-app"
+                  displayName: "Deploy Epic to Azure Web App (Staging)"
